@@ -1,0 +1,188 @@
+import streamlit as st
+import os
+from openai import OpenAI
+import datetime
+import json
+print("------>重新执行此文件，渲染展示页面")
+
+#保存会话信息函数
+def save_session():
+    if st.session_state.current_session:#判断：session_state 中是否有current_session，且不为空字符串 / None
+        session_date={
+            "nick_name": st.session_state.nick_name,
+            "nature": st.session_state.nature,
+            "current_session":datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S"),
+            "messages":st.session_state.messages
+
+        }
+    #如果session不存在，侧创建
+        if not os.path.exists("sessions"):
+            os.mkdir("sessions")
+            #保存会话数据
+        with open(f"sessions/{st.session_state.current_session}.json","w",encoding="utf-8") as f:
+            json.dump(session_date,f,ensure_ascii=False)
+#加载所有的会话信息
+def load_sessions():
+    session_list=[]
+    #加载sessions下所有的会话信息
+    if os.path.exists("sessions"):
+        file_list=os.listdir("sessions")#列出下面目录下的所有文件和文件夹
+        for filename in file_list:
+            if filename.endswith(".json"):
+                session_list.append(filename[:-5])
+    return session_list
+#加载指定的会话信息
+def load_session(session_name):
+    try:
+        if os.path.exists("sessions"):
+            #读取会话信息
+            with open(f"sessions/{session_name}.json","r",encoding="utf-8") as f:
+                session_date=json.load(f)
+                st.session_state.messages=session_date["messages"]
+                st.session_state.nick_name=session_date["nick_name"]
+                st.session_state.nature=session_date["nature"]
+                st.session_state.current_session=session_name
+    except Exception:
+        st.error("加载会话失败")
+#输出会话信息函数
+def delete_session(session_name):
+    try:
+        if os.path.exists(f"sessions/{session_name}.json"):
+            os.remove(f"sessions/{session_name}.json")
+            if session_name==st.session_state.current_session:
+                st.session_state.messages=[]
+                st.session_state.current_session=generate_session_name()
+    except Exception:
+        st.error("删除会话失败")
+#生成会话标识函数
+def generate_session_name():
+    return datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
+#昵称
+if "nick_name" not in st.session_state:
+    st.session_state.nick_name = "小甜甜"
+#性格
+if "nature" not in st.session_state:
+    st.session_state.nature = "活泼开朗的东北姑娘"
+#会话标识
+if "current_session" not in st.session_state:
+    st.session_state.current_session=generate_session_name()
+#设计网页
+st.set_page_config(
+    page_title="AI=爱",
+    page_icon="🥰",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={}
+)
+
+#大标题（1）
+st.title(f'ai智能伴侣{st.session_state.current_session}')
+#（2）
+#logo，没有图片就注释掉
+st.logo("./resources/logo.png")
+#系统表示符
+send_msg = [
+    {"role": "system",
+     "content": f"""你叫{st.session_state.nick_name}，现在是用户的真实伴侣。
+性格：{st.session_state.nature}
+规则：
+1. 每次只回1条消息
+2. 禁止任何场景或状态描述性文字
+3. 回复简短，像微信聊天一样
+4. 适当使用❤️🌸emoji
+"""}
+]
+send_msg.extend(st.session_state.messages)
+#左边的侧边栏，创建输入框
+#会话信息（3）
+st.sidebar.subheader("AI控制面板")
+#新建会话（4）
+if st.sidebar.button("新建会话",width="stretch",icon="🥰"):
+#保存当前会话
+    save_session()
+#创建的会话
+    if st.session_state.messages:
+        st.session_state.messages=[]
+        st.session_state.current_session=generate_session_name()
+        save_session()
+
+#会话历史（5）
+st.sidebar.text("会话历史")
+session_list=load_sessions()
+for session in session_list:
+    col1,col2=st.sidebar.columns([4,1])
+    with col1:
+        if st.button(session,width="stretch",icon="📃",key=f"load_{session}",type="primary" if session==st.session_state.current_session else "secondary"):
+            load_session(session)
+            st.session_state.current_session = session
+            st.rerun()
+    with col2:
+        if st.button(" ",width="stretch",icon="❌",key=f"delete_{session}"):
+            delete_session(session)
+            st.rerun()
+
+st.sidebar.divider()
+#伴侣信息
+st.sidebar.subheader("伴侣信息")
+#输入框
+nick_name=st.sidebar.text_input("昵称",placeholder="请输入昵称",value=st.session_state.nick_name)
+if "nick_name" :
+    st.session_state.nick_name = nick_name
+nature=st.sidebar.text_area("性格",placeholder="请输入性格",value=st.session_state.nature)
+
+if "nature" :
+    st.session_state.nature = nature
+
+
+
+
+
+#展示历史聊天信息
+for message in st.session_state.messages:
+    if message["role"]=="user":
+        st.chat_message("user").write(message["content"])
+    else:
+        st.chat_message("assistant").write(message["content"])
+
+
+# 创建与AI大模型交互的客户端对象
+client = OpenAI(
+    api_key="sk-00329a34ae034f73955a3ce1df6f356c",
+    base_url="https://api.deepseek.com"
+)
+
+#消息输入框
+prompt=st.chat_input("请输入你的问题")
+
+if prompt:
+    # 显示用户消息 + 存入会话
+    st.chat_message("user").write(prompt)
+    print("---------->请用ai大模型，提示词",prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+
+
+    # 与AI大模型进行交互，开启流式 stream=True
+    response = client.chat.completions.create(
+        model="deepseek-chat",
+        messages=send_msg,
+        stream=True
+    )
+
+    # --------流式输出解析方式--------
+    full_response = ""   # 用来拼接完整AI回答
+    with st.chat_message("assistant"):
+        message_placeholder = st.empty()  # 创建占位容器，不断刷新文字
+        for chunk in response:
+            # delta 是流式每一小块内容
+            if chunk.choices[0].delta.content is not None:
+                content = chunk.choices[0].delta.content
+                full_response += content
+                message_placeholder.write(full_response)  # 不断更新气泡文字
+
+    # ✅保存大模型完整答案到聊天历史
+    st.session_state.messages.append({"role": "assistant", "content": full_response})
+    #保存会话信息
+    save_session()
